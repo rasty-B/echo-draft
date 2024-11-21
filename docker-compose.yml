@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  echo-ui:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_OLLAMA_API_URL=http://ollama:11400
+    networks:
+      - echo-network
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11400:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./models.txt:/models.txt
+    networks:
+      - echo-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    entrypoint: >
+      sh -c "
+        ollama serve &
+        sleep 10
+        while read model; do
+          ollama pull $$model
+        done < /models.txt
+        wait
+      "
+
+networks:
+  echo-network:
+    driver: bridge
+
+volumes:
+  ollama_models:
+    driver: local
